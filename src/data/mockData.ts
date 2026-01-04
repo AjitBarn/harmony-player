@@ -1,0 +1,95 @@
+import { Track, DetectedUser } from "@/types/music";
+
+export const mockTracks: Track[] = [
+  {
+    id: "1",
+    title: "Blinding Lights",
+    artist: "The Weeknd",
+    album: "After Hours",
+    duration: 200,
+    coverUrl: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop",
+  },
+  {
+    id: "2",
+    title: "Levitating",
+    artist: "Dua Lipa",
+    album: "Future Nostalgia",
+    duration: 203,
+    coverUrl: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop",
+  },
+  {
+    id: "3",
+    title: "Stay",
+    artist: "The Kid LAROI & Justin Bieber",
+    album: "F*CK LOVE 3",
+    duration: 141,
+    coverUrl: "https://images.unsplash.com/photo-1571330735066-03aaa9429d89?w=300&h=300&fit=crop",
+  },
+  {
+    id: "4",
+    title: "Heat Waves",
+    artist: "Glass Animals",
+    album: "Dreamland",
+    duration: 238,
+    coverUrl: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop",
+  },
+  {
+    id: "5",
+    title: "Save Your Tears",
+    artist: "The Weeknd",
+    album: "After Hours",
+    duration: 215,
+    coverUrl: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop",
+  },
+  {
+    id: "6",
+    title: "Peaches",
+    artist: "Justin Bieber",
+    album: "Justice",
+    duration: 198,
+    coverUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop",
+  },
+  {
+    id: "7",
+    title: "Montero",
+    artist: "Lil Nas X",
+    album: "Montero",
+    duration: 137,
+    coverUrl: "https://images.unsplash.com/photo-1484755560615-a4c64e778a6c?w=300&h=300&fit=crop",
+  },
+  {
+    id: "8",
+    title: "Good 4 U",
+    artist: "Olivia Rodrigo",
+    album: "SOUR",
+    duration: 178,
+    coverUrl: "https://images.unsplash.com/photo-1446057032654-9d8885db76c6?w=300&h=300&fit=crop",
+  },
+];
+
+export const mockUsers: DetectedUser[] = [
+  {
+    id: "user1",
+    name: "Alex Chen",
+    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
+    playlist: [mockTracks[0], mockTracks[1], mockTracks[3], mockTracks[5]],
+    detectedAt: new Date(),
+    confidence: 0.94,
+  },
+  {
+    id: "user2",
+    name: "Sarah Miller",
+    avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&h=150&fit=crop&crop=face",
+    playlist: [mockTracks[0], mockTracks[2], mockTracks[4], mockTracks[6]],
+    detectedAt: new Date(),
+    confidence: 0.89,
+  },
+  {
+    id: "user3",
+    name: "Jordan Lee",
+    avatar: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face",
+    playlist: [mockTracks[0], mockTracks[1], mockTracks[5], mockTracks[7]],
+    detectedAt: new Date(),
+    confidence: 0.91,
+  },
+];
