@@ -1,8 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Camera, CameraOff, Users, Scan, CheckCircle2, Loader2 } from "lucide-react";
+import { Camera, CameraOff, Users, Scan, CheckCircle2, Loader2, UserPlus } from "lucide-react";
 import { DetectedUser } from "@/types/music";
-import { simulateFaceDetection as fetchUsersWithPlaylists } from "@/data/mockData";
 import { cn } from "@/lib/utils";
+import { 
+  loadModels, 
+  detectFaces, 
+  getRegisteredFaces, 
+  matchFaces, 
+  areModelsLoaded,
+  RegisteredFace 
+} from "@/services/faceRecognition";
+import { createUserPlaylist, MusicGenre } from "@/services/jamendoApi";
+import { FaceRegistration } from "./FaceRegistration";
 
 interface FaceDetectionCameraProps {
   onUsersDetected: (users: DetectedUser[]) => void;
@@ -14,8 +23,27 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
+  const [modelsReady, setModelsReady] = useState(areModelsLoaded());
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [noFacesMessage, setNoFacesMessage] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // Load models when camera starts
+  useEffect(() => {
+    if (cameraActive && !areModelsLoaded()) {
+      setIsLoadingModels(true);
+      loadModels()
+        .then(() => {
+          setModelsReady(true);
+          setIsLoadingModels(false);
+        })
+        .catch((err) => {
+          console.error("Failed to load models:", err);
+          setIsLoadingModels(false);
+        });
+    }
+  }, [cameraActive]);
 
   const startCamera = useCallback(async () => {
     try {
@@ -41,8 +69,11 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
   }, []);
 
   const runFaceDetection = useCallback(async () => {
+    if (!videoRef.current || !modelsReady) return;
+    
     setIsScanning(true);
     setScanProgress(0);
+    setNoFacesMessage(null);
 
     // Animate progress bar
     const interval = setInterval(() => {
@@ -56,12 +87,56 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
     }, 50);
 
     try {
+      // Run actual face detection
+      const detections = await detectFaces(videoRef.current);
+      
+      if (detections.length === 0) {
+        setNoFacesMessage("No faces detected. Try adjusting your position.");
+        clearInterval(interval);
+        setIsScanning(false);
+        return;
+      }
+
+      // Get registered faces and match
+      const registeredFaces = getRegisteredFaces();
+      
+      if (registeredFaces.length === 0) {
+        setNoFacesMessage("No registered users. Click 'Register Face' to add yourself.");
+        clearInterval(interval);
+        setIsScanning(false);
+        return;
+      }
+
+      const descriptors = detections.map(d => d.descriptor);
+      const matches = matchFaces(descriptors, registeredFaces);
+
+      if (matches.length === 0) {
+        setNoFacesMessage("Face not recognized. Please register first.");
+        clearInterval(interval);
+        setIsScanning(false);
+        return;
+      }
+
+      // Generate playlists for matched users
       setIsLoadingPlaylists(true);
       
-      // Fetch real playlists from Jamendo for random users
-      const numUsers = Math.floor(Math.random() * 3) + 1;
-      const detectedWithPlaylists = await fetchUsersWithPlaylists(numUsers);
-      
+      const detectedWithPlaylists: DetectedUser[] = await Promise.all(
+        matches.map(async ({ face, confidence }) => {
+          const playlist = await createUserPlaylist(
+            face.preferredGenres as MusicGenre[],
+            3
+          );
+          return {
+            id: face.id,
+            name: face.name,
+            avatar: face.avatar,
+            playlist,
+            detectedAt: new Date(),
+            confidence,
+          };
+        })
+      );
+
       setScanProgress(100);
       clearInterval(interval);
       setIsScanning(false);
@@ -69,18 +144,21 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
       
       onUsersDetected(detectedWithPlaylists);
     } catch (error) {
-      console.error("Error fetching playlists:", error);
+      console.error("Error during face detection:", error);
       clearInterval(interval);
       setIsScanning(false);
       setIsLoadingPlaylists(false);
+      setNoFacesMessage("Error during detection. Please try again.");
     }
-  }, [onUsersDetected]);
+  }, [onUsersDetected, modelsReady]);
 
   useEffect(() => {
     return () => {
       stopCamera();
     };
   }, [stopCamera]);
+
+  const registeredCount = getRegisteredFaces().length;
 
   return (
     <div className="glass rounded-2xl p-6 space-y-4">
@@ -95,21 +173,28 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
           <div>
             <h3 className="font-semibold text-foreground">Face Detection</h3>
             <p className="text-sm text-muted-foreground">
-              {cameraActive ? "Camera active" : "Start camera to detect users"}
+              {cameraActive 
+                ? isLoadingModels 
+                  ? "Loading AI models..." 
+                  : `Camera active • ${registeredCount} user(s) registered`
+                : "Start camera to detect users"}
             </p>
           </div>
         </div>
-        <button
-          onClick={cameraActive ? stopCamera : startCamera}
-          className={cn(
-            "px-4 py-2 rounded-xl font-medium transition-all duration-300",
-            cameraActive
-              ? "bg-destructive/20 text-destructive hover:bg-destructive/30"
-              : "bg-primary text-primary-foreground hover:bg-primary/90"
-          )}
-        >
-          {cameraActive ? "Stop" : "Start"}
-        </button>
+        <div className="flex items-center gap-2">
+          <FaceRegistration onFacesUpdated={() => {}} />
+          <button
+            onClick={cameraActive ? stopCamera : startCamera}
+            className={cn(
+              "px-4 py-2 rounded-xl font-medium transition-all duration-300",
+              cameraActive
+                ? "bg-destructive/20 text-destructive hover:bg-destructive/30"
+                : "bg-primary text-primary-foreground hover:bg-primary/90"
+            )}
+          >
+            {cameraActive ? "Stop" : "Start"}
+          </button>
+        </div>
       </div>
 
       {/* Camera Preview */}
@@ -129,6 +214,14 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
             <CameraOff className="w-12 h-12 text-muted-foreground" />
             <p className="text-muted-foreground text-sm">Camera is off</p>
+          </div>
+        )}
+
+        {/* Models Loading Overlay */}
+        {cameraActive && isLoadingModels && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/60 backdrop-blur-sm">
+            <Loader2 className="w-10 h-10 text-primary animate-spin" />
+            <p className="mt-4 text-primary font-medium">Loading face detection AI...</p>
           </div>
         )}
 
@@ -153,7 +246,7 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
           </div>
         )}
 
-        {/* Face Detection Boxes (Simulated) */}
+        {/* Face Detection Boxes */}
         {cameraActive && !isScanning && detectedUsers.length > 0 && (
           <div className="absolute inset-0 pointer-events-none">
             {detectedUsers.map((user, index) => (
@@ -176,19 +269,32 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
         )}
       </div>
 
+      {/* Feedback Message */}
+      {noFacesMessage && (
+        <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-600 dark:text-amber-400 text-sm">
+          <UserPlus className="w-4 h-4 shrink-0" />
+          <span>{noFacesMessage}</span>
+        </div>
+      )}
+
       {/* Scan Button */}
       {cameraActive && (
         <button
           onClick={runFaceDetection}
-          disabled={isScanning || isLoadingPlaylists}
+          disabled={isScanning || isLoadingPlaylists || isLoadingModels}
           className={cn(
             "w-full py-3 rounded-xl font-medium transition-all duration-300 flex items-center justify-center gap-2",
-            isScanning || isLoadingPlaylists
+            isScanning || isLoadingPlaylists || isLoadingModels
               ? "bg-muted text-muted-foreground cursor-not-allowed"
               : "bg-primary text-primary-foreground hover:bg-primary/90 glow-primary"
           )}
         >
-          {isLoadingPlaylists ? (
+          {isLoadingModels ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Loading AI...
+            </>
+          ) : isLoadingPlaylists ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
               Loading playlists...

@@ -33,6 +33,9 @@ export const MUSIC_GENRES = [
 
 export type MusicGenre = typeof MUSIC_GENRES[number];
 
+// Alias for components that need AVAILABLE_GENRES
+export const AVAILABLE_GENRES = MUSIC_GENRES;
+
 /**
  * Fetch tracks from Jamendo by genre/tag
  */
