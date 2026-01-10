@@ -1,5 +1,86 @@
 import { Track, DetectedUser } from "@/types/music";
+import { createUserPlaylist, MusicGenre } from "@/services/jamendoApi";
 
+// User profiles with their genre preferences (simulates user database)
+export interface UserProfile {
+  id: string;
+  name: string;
+  avatar: string;
+  preferredGenres: MusicGenre[];
+}
+
+// Predefined user profiles with different tastes
+export const userProfiles: UserProfile[] = [
+  {
+    id: "user1",
+    name: "Alex Chen",
+    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
+    preferredGenres: ["electronic", "pop", "indie"],
+  },
+  {
+    id: "user2",
+    name: "Sarah Miller",
+    avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&h=150&fit=crop&crop=face",
+    preferredGenres: ["jazz", "soul", "blues"],
+  },
+  {
+    id: "user3",
+    name: "Jordan Lee",
+    avatar: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face",
+    preferredGenres: ["rock", "metal", "punk"],
+  },
+  {
+    id: "user4",
+    name: "Maya Patel",
+    avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face",
+    preferredGenres: ["pop", "hiphop", "electronic"],
+  },
+  {
+    id: "user5",
+    name: "Chris Taylor",
+    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face",
+    preferredGenres: ["ambient", "classical", "folk"],
+  },
+];
+
+/**
+ * Generate a DetectedUser with a real Jamendo playlist based on their preferences
+ */
+export async function generateDetectedUser(
+  profile: UserProfile,
+  confidence: number = 0.9
+): Promise<DetectedUser> {
+  const playlist = await createUserPlaylist(profile.preferredGenres, 3);
+  
+  return {
+    id: profile.id,
+    name: profile.name,
+    avatar: profile.avatar,
+    playlist,
+    detectedAt: new Date(),
+    confidence,
+  };
+}
+
+/**
+ * Simulate face detection by generating users with real playlists
+ */
+export async function simulateFaceDetection(
+  count: number = 3
+): Promise<DetectedUser[]> {
+  // Pick random users
+  const shuffled = [...userProfiles].sort(() => Math.random() - 0.5);
+  const selectedProfiles = shuffled.slice(0, Math.min(count, shuffled.length));
+  
+  // Generate users with real playlists in parallel
+  const userPromises = selectedProfiles.map((profile, index) => 
+    generateDetectedUser(profile, 0.85 + Math.random() * 0.1)
+  );
+  
+  return Promise.all(userPromises);
+}
+
+// Keep mock data for fallback/testing
 export const mockTracks: Track[] = [
   {
     id: "1",
@@ -17,54 +98,6 @@ export const mockTracks: Track[] = [
     duration: 203,
     coverUrl: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop",
   },
-  {
-    id: "3",
-    title: "Stay",
-    artist: "The Kid LAROI & Justin Bieber",
-    album: "F*CK LOVE 3",
-    duration: 141,
-    coverUrl: "https://images.unsplash.com/photo-1571330735066-03aaa9429d89?w=300&h=300&fit=crop",
-  },
-  {
-    id: "4",
-    title: "Heat Waves",
-    artist: "Glass Animals",
-    album: "Dreamland",
-    duration: 238,
-    coverUrl: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop",
-  },
-  {
-    id: "5",
-    title: "Save Your Tears",
-    artist: "The Weeknd",
-    album: "After Hours",
-    duration: 215,
-    coverUrl: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop",
-  },
-  {
-    id: "6",
-    title: "Peaches",
-    artist: "Justin Bieber",
-    album: "Justice",
-    duration: 198,
-    coverUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop",
-  },
-  {
-    id: "7",
-    title: "Montero",
-    artist: "Lil Nas X",
-    album: "Montero",
-    duration: 137,
-    coverUrl: "https://images.unsplash.com/photo-1484755560615-a4c64e778a6c?w=300&h=300&fit=crop",
-  },
-  {
-    id: "8",
-    title: "Good 4 U",
-    artist: "Olivia Rodrigo",
-    album: "SOUR",
-    duration: 178,
-    coverUrl: "https://images.unsplash.com/photo-1446057032654-9d8885db76c6?w=300&h=300&fit=crop",
-  },
 ];
 
 export const mockUsers: DetectedUser[] = [
@@ -72,24 +105,8 @@ export const mockUsers: DetectedUser[] = [
     id: "user1",
     name: "Alex Chen",
     avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
-    playlist: [mockTracks[0], mockTracks[1], mockTracks[3], mockTracks[5]],
+    playlist: mockTracks,
     detectedAt: new Date(),
     confidence: 0.94,
-  },
-  {
-    id: "user2",
-    name: "Sarah Miller",
-    avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&h=150&fit=crop&crop=face",
-    playlist: [mockTracks[0], mockTracks[2], mockTracks[4], mockTracks[6]],
-    detectedAt: new Date(),
-    confidence: 0.89,
-  },
-  {
-    id: "user3",
-    name: "Jordan Lee",
-    avatar: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face",
-    playlist: [mockTracks[0], mockTracks[1], mockTracks[5], mockTracks[7]],
-    detectedAt: new Date(),
-    confidence: 0.91,
   },
 ];

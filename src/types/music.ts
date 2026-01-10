@@ -5,8 +5,15 @@ export interface Track {
   album: string;
   duration: number;
   coverUrl: string;
+  audioUrl?: string; // Jamendo streaming URL
   priority?: number;
   commonCount?: number;
+}
+
+// User music preferences for playlist generation
+export interface UserMusicPreferences {
+  genres: string[];
+  favoriteArtists?: string[];
 }
 
 export interface DetectedUser {

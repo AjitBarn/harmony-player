@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Camera, CameraOff, Users, Scan, CheckCircle2 } from "lucide-react";
+import { Camera, CameraOff, Users, Scan, CheckCircle2, Loader2 } from "lucide-react";
 import { DetectedUser } from "@/types/music";
-import { mockUsers } from "@/data/mockData";
+import { simulateFaceDetection as fetchUsersWithPlaylists } from "@/data/mockData";
 import { cn } from "@/lib/utils";
 
 interface FaceDetectionCameraProps {
@@ -11,6 +11,7 @@ interface FaceDetectionCameraProps {
 
 export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDetectionCameraProps) {
   const [isScanning, setIsScanning] = useState(false);
+  const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -39,29 +40,40 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
     setCameraActive(false);
   }, []);
 
-  const simulateFaceDetection = useCallback(() => {
+  const runFaceDetection = useCallback(async () => {
     setIsScanning(true);
     setScanProgress(0);
 
+    // Animate progress bar
     const interval = setInterval(() => {
       setScanProgress((prev) => {
-        if (prev >= 100) {
+        if (prev >= 90) {
           clearInterval(interval);
-          setIsScanning(false);
-          // Simulate detecting 1-3 random users
-          const numUsers = Math.floor(Math.random() * 3) + 1;
-          const shuffled = [...mockUsers].sort(() => Math.random() - 0.5);
-          const detected = shuffled.slice(0, numUsers).map((user) => ({
-            ...user,
-            detectedAt: new Date(),
-            confidence: 0.85 + Math.random() * 0.14,
-          }));
-          onUsersDetected(detected);
-          return 100;
+          return 90;
         }
-        return prev + 2;
+        return prev + 3;
       });
     }, 50);
+
+    try {
+      setIsLoadingPlaylists(true);
+      
+      // Fetch real playlists from Jamendo for random users
+      const numUsers = Math.floor(Math.random() * 3) + 1;
+      const detectedWithPlaylists = await fetchUsersWithPlaylists(numUsers);
+      
+      setScanProgress(100);
+      clearInterval(interval);
+      setIsScanning(false);
+      setIsLoadingPlaylists(false);
+      
+      onUsersDetected(detectedWithPlaylists);
+    } catch (error) {
+      console.error("Error fetching playlists:", error);
+      clearInterval(interval);
+      setIsScanning(false);
+      setIsLoadingPlaylists(false);
+    }
   }, [onUsersDetected]);
 
   useEffect(() => {
@@ -129,7 +141,9 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
                 <Scan className="w-12 h-12 text-primary animate-pulse" />
               </div>
             </div>
-            <p className="mt-4 text-primary font-medium">Scanning faces... {scanProgress}%</p>
+            <p className="mt-4 text-primary font-medium">
+              {isLoadingPlaylists ? "Loading playlists..." : `Scanning faces... ${scanProgress}%`}
+            </p>
             <div className="w-48 h-2 bg-muted rounded-full mt-2 overflow-hidden">
               <div
                 className="h-full bg-primary transition-all duration-100 rounded-full"
@@ -165,17 +179,26 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
       {/* Scan Button */}
       {cameraActive && (
         <button
-          onClick={simulateFaceDetection}
-          disabled={isScanning}
+          onClick={runFaceDetection}
+          disabled={isScanning || isLoadingPlaylists}
           className={cn(
             "w-full py-3 rounded-xl font-medium transition-all duration-300 flex items-center justify-center gap-2",
-            isScanning
+            isScanning || isLoadingPlaylists
               ? "bg-muted text-muted-foreground cursor-not-allowed"
               : "bg-primary text-primary-foreground hover:bg-primary/90 glow-primary"
           )}
         >
-          <Scan className="w-5 h-5" />
-          {isScanning ? "Scanning..." : "Scan for Faces"}
+          {isLoadingPlaylists ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Loading playlists...
+            </>
+          ) : (
+            <>
+              <Scan className="w-5 h-5" />
+              {isScanning ? "Scanning..." : "Scan for Faces"}
+            </>
+          )}
         </button>
       )}
 
