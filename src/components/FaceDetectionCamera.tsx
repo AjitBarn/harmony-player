@@ -10,7 +10,7 @@ import {
   areModelsLoaded,
   RegisteredFace 
 } from "@/services/faceRecognition";
-import { createUserPlaylist, MusicGenre } from "@/services/jamendoApi";
+import { createUserPlaylist, createPlaylistFromIds, MusicGenre } from "@/services/jamendoApi";
 import { FaceRegistration } from "./FaceRegistration";
 
 interface FaceDetectionCameraProps {
@@ -122,10 +122,19 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
       
       const detectedWithPlaylists: DetectedUser[] = await Promise.all(
         matches.map(async ({ face, confidence }) => {
-          const playlist = await createUserPlaylist(
-            face.preferredGenres as MusicGenre[],
-            3
-          );
+          let playlist;
+          
+          // Prefer playlists over genres if available
+          if (face.selectedPlaylists && face.selectedPlaylists.length > 0) {
+            const playlistIds = face.selectedPlaylists.map(p => p.id);
+            playlist = await createPlaylistFromIds(playlistIds);
+          } else {
+            playlist = await createUserPlaylist(
+              face.preferredGenres as MusicGenre[],
+              3
+            );
+          }
+          
           return {
             id: face.id,
             name: face.name,

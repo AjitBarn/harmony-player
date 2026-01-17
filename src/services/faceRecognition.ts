@@ -7,6 +7,7 @@ export interface RegisteredFace {
   avatar: string;
   descriptor: Float32Array;
   preferredGenres: string[];
+  selectedPlaylists: { id: string; name: string }[]; // New: selected Jamendo playlists
   registeredAt: Date;
 }
 
@@ -74,6 +75,7 @@ export function getRegisteredFaces(): RegisteredFace[] {
     return parsed.map((face: any) => ({
       ...face,
       descriptor: new Float32Array(face.descriptor),
+      selectedPlaylists: face.selectedPlaylists || [],
       registeredAt: new Date(face.registeredAt),
     }));
   } catch {
@@ -99,7 +101,8 @@ function saveRegisteredFaces(faces: RegisteredFace[]): void {
 export async function registerFace(
   video: HTMLVideoElement,
   name: string,
-  preferredGenres: string[]
+  preferredGenres: string[],
+  selectedPlaylists: { id: string; name: string }[] = []
 ): Promise<RegisteredFace | null> {
   const detections = await detectFaces(video);
 
@@ -139,6 +142,7 @@ export async function registerFace(
     avatar,
     descriptor: detection.descriptor,
     preferredGenres,
+    selectedPlaylists,
     registeredAt: new Date(),
   };
 
