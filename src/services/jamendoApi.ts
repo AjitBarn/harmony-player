@@ -24,6 +24,36 @@ interface JamendoResponse {
   results: JamendoTrack[];
 }
 
+export interface JamendoPlaylist {
+  id: string;
+  name: string;
+  creationdate: string;
+  user_id: string;
+  user_name: string;
+}
+
+interface JamendoPlaylistResponse {
+  headers: {
+    status: string;
+    code: number;
+    results_count: number;
+  };
+  results: JamendoPlaylist[];
+}
+
+interface JamendoPlaylistTracksResponse {
+  headers: {
+    status: string;
+    code: number;
+    results_count: number;
+  };
+  results: Array<{
+    id: string;
+    name: string;
+    tracks: JamendoTrack[];
+  }>;
+}
+
 // Genre/tag mappings for user preferences
 export const MUSIC_GENRES = [
   "pop", "rock", "electronic", "hiphop", "jazz", 
@@ -163,6 +193,106 @@ export async function createUserPlaylist(
   return shuffleArray(allTracks);
 }
 
+/**
+ * Search for playlists by name
+ */
+export async function searchPlaylists(query: string, limit: number = 10): Promise<JamendoPlaylist[]> {
+  const url = new URL("https://api.jamendo.com/v3.0/playlists");
+  url.searchParams.set("client_id", JAMENDO_CLIENT_ID);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("limit", limit.toString());
+  url.searchParams.set("namesearch", query);
+
+  console.log(`Searching playlists: ${query}`);
+
+  try {
+    const response = await fetch(url.toString());
+    
+    if (!response.ok) {
+      console.error(`Jamendo API HTTP error: ${response.status}`);
+      return [];
+    }
+    
+    const data: JamendoPlaylistResponse = await response.json();
+    
+    if (data.headers.status !== "success") {
+      console.error("Jamendo API error:", data.headers);
+      return [];
+    }
+
+    console.log(`Found ${data.results.length} playlists`);
+    return data.results;
+  } catch (error) {
+    console.error("Failed to search playlists:", error);
+    return [];
+  }
+}
+
+/**
+ * Fetch tracks from a specific playlist
+ */
+export async function fetchPlaylistTracks(playlistId: string): Promise<Track[]> {
+  const url = new URL("https://api.jamendo.com/v3.0/playlists/tracks");
+  url.searchParams.set("client_id", JAMENDO_CLIENT_ID);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("id", playlistId);
+
+  console.log(`Fetching playlist tracks for: ${playlistId}`);
+
+  try {
+    const response = await fetch(url.toString());
+    
+    if (!response.ok) {
+      console.error(`Jamendo API HTTP error: ${response.status}`);
+      return [];
+    }
+    
+    const data: JamendoPlaylistTracksResponse = await response.json();
+    
+    if (data.headers.status !== "success") {
+      console.error("Jamendo API error:", data.headers);
+      return [];
+    }
+
+    if (data.results.length === 0 || !data.results[0].tracks) {
+      console.warn("No tracks found in playlist");
+      return [];
+    }
+
+    const tracks = data.results[0].tracks.map(mapJamendoToTrack);
+    console.log(`Found ${tracks.length} tracks in playlist`);
+    return tracks;
+  } catch (error) {
+    console.error("Failed to fetch playlist tracks:", error);
+    return [];
+  }
+}
+
+/**
+ * Create a user playlist from selected Jamendo playlists
+ */
+export async function createPlaylistFromIds(playlistIds: string[]): Promise<Track[]> {
+  console.log(`Creating playlist from IDs: ${playlistIds.join(', ')}`);
+  
+  if (!playlistIds || playlistIds.length === 0) {
+    console.warn("No playlist IDs provided, fetching popular tracks");
+    return fetchPopularTracks(10);
+  }
+  
+  const trackPromises = playlistIds.map(id => fetchPlaylistTracks(id));
+  const results = await Promise.all(trackPromises);
+  const allTracks = results.flat();
+  
+  console.log(`Total tracks from playlists: ${allTracks.length}`);
+  
+  if (allTracks.length === 0) {
+    console.warn("No tracks found, fetching popular tracks");
+    return fetchPopularTracks(10);
+  }
+  
+  return allTracks;
+}
+
 function mapJamendoToTrack(jamendoTrack: JamendoTrack): Track {
   return {
     id: jamendoTrack.id,
@@ -171,7 +301,7 @@ function mapJamendoToTrack(jamendoTrack: JamendoTrack): Track {
     album: jamendoTrack.album_name,
     duration: jamendoTrack.duration,
     coverUrl: jamendoTrack.image || "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop",
-    audioUrl: jamendoTrack.audio, // Full streaming URL!
+    audioUrl: jamendoTrack.audio,
   };
 }
 

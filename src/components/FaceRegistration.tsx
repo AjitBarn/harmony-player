@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Camera, UserPlus, Trash2, X, Music, Loader2 } from "lucide-react";
+import { Camera, UserPlus, Trash2, Music, Loader2, Search, ListMusic, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -10,6 +10,7 @@ import {
   DialogTrigger 
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { 
   RegisteredFace, 
@@ -19,7 +20,12 @@ import {
   deleteFace,
   areModelsLoaded 
 } from "@/services/faceRecognition";
-import { MusicGenre, AVAILABLE_GENRES } from "@/services/jamendoApi";
+import { 
+  MusicGenre, 
+  AVAILABLE_GENRES, 
+  searchPlaylists, 
+  JamendoPlaylist 
+} from "@/services/jamendoApi";
 import { cn } from "@/lib/utils";
 
 interface FaceRegistrationProps {
@@ -32,12 +38,19 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
   const [isRegistering, setIsRegistering] = useState(false);
   const [name, setName] = useState("");
   const [selectedGenres, setSelectedGenres] = useState<MusicGenre[]>([]);
+  const [selectedPlaylists, setSelectedPlaylists] = useState<{ id: string; name: string }[]>([]);
   const [cameraActive, setCameraActive] = useState(false);
   const [modelsReady, setModelsReady] = useState(false);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   
+  // Playlist search state
+  const [playlistSearch, setPlaylistSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<JamendoPlaylist[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Load registered faces on mount
   useEffect(() => {
@@ -62,6 +75,31 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
       setModelsReady(true);
     }
   }, [isOpen]);
+
+  // Debounced playlist search
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (playlistSearch.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      const results = await searchPlaylists(playlistSearch.trim(), 10);
+      setSearchResults(results);
+      setIsSearching(false);
+    }, 500);
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [playlistSearch]);
 
   const startCamera = useCallback(async () => {
     try {
@@ -91,6 +129,9 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
     stopCamera();
     setName("");
     setSelectedGenres([]);
+    setSelectedPlaylists([]);
+    setPlaylistSearch("");
+    setSearchResults([]);
     setIsRegistering(false);
     setIsOpen(false);
   }, [stopCamera]);
@@ -103,13 +144,27 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
     );
   };
 
+  const togglePlaylist = (playlist: JamendoPlaylist) => {
+    setSelectedPlaylists((prev) => {
+      const exists = prev.find((p) => p.id === playlist.id);
+      if (exists) {
+        return prev.filter((p) => p.id !== playlist.id);
+      }
+      return [...prev, { id: playlist.id, name: playlist.name }];
+    });
+  };
+
+  const removePlaylist = (playlistId: string) => {
+    setSelectedPlaylists((prev) => prev.filter((p) => p.id !== playlistId));
+  };
+
   const handleRegister = async () => {
     if (!name.trim()) {
       toast.error("Please enter your name");
       return;
     }
-    if (selectedGenres.length === 0) {
-      toast.error("Please select at least one music genre");
+    if (selectedPlaylists.length === 0 && selectedGenres.length === 0) {
+      toast.error("Please select at least one playlist or genre");
       return;
     }
     if (!videoRef.current) {
@@ -122,7 +177,8 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
       const newFace = await registerFace(
         videoRef.current,
         name.trim(),
-        selectedGenres
+        selectedGenres,
+        selectedPlaylists
       );
       
       if (newFace) {
@@ -130,6 +186,9 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
         toast.success(`${name} registered successfully!`);
         setName("");
         setSelectedGenres([]);
+        setSelectedPlaylists([]);
+        setPlaylistSearch("");
+        setSearchResults([]);
         onFacesUpdated?.();
       }
     } catch (error) {
@@ -154,7 +213,7 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
           Register Face
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="w-5 h-5" />
@@ -204,33 +263,116 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
                     />
                   </div>
 
-                  {/* Genre Selection */}
-                  <div>
-                    <label className="text-sm font-medium mb-2 block flex items-center gap-2">
-                      <Music className="w-4 h-4" />
-                      Music Preferences (select 1-3)
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {AVAILABLE_GENRES.map((genre) => (
-                        <Badge
-                          key={genre}
-                          variant={selectedGenres.includes(genre) ? "default" : "outline"}
-                          className={cn(
-                            "cursor-pointer transition-all capitalize",
-                            selectedGenres.includes(genre) && "bg-primary"
-                          )}
-                          onClick={() => toggleGenre(genre)}
-                        >
-                          {genre}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
+                  {/* Music Selection Tabs */}
+                  <Tabs defaultValue="playlists" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="playlists" className="gap-2">
+                        <ListMusic className="w-4 h-4" />
+                        Playlists
+                      </TabsTrigger>
+                      <TabsTrigger value="genres" className="gap-2">
+                        <Music className="w-4 h-4" />
+                        Genres
+                      </TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="playlists" className="space-y-3">
+                      {/* Selected Playlists */}
+                      {selectedPlaylists.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {selectedPlaylists.map((playlist) => (
+                            <Badge
+                              key={playlist.id}
+                              variant="default"
+                              className="gap-1 pr-1"
+                            >
+                              {playlist.name}
+                              <button
+                                onClick={() => removePlaylist(playlist.id)}
+                                className="ml-1 hover:bg-primary-foreground/20 rounded p-0.5"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Playlist Search */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          value={playlistSearch}
+                          onChange={(e) => setPlaylistSearch(e.target.value)}
+                          placeholder="Search Jamendo playlists..."
+                          className="pl-9"
+                        />
+                      </div>
+                      
+                      {/* Search Results */}
+                      {isSearching && (
+                        <div className="flex items-center justify-center py-4 text-muted-foreground">
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          Searching...
+                        </div>
+                      )}
+                      
+                      {searchResults.length > 0 && (
+                        <div className="max-h-40 overflow-y-auto space-y-1 border rounded-lg p-2">
+                          {searchResults.map((playlist) => {
+                            const isSelected = selectedPlaylists.some((p) => p.id === playlist.id);
+                            return (
+                              <button
+                                key={playlist.id}
+                                onClick={() => togglePlaylist(playlist)}
+                                className={cn(
+                                  "w-full text-left px-3 py-2 rounded-md transition-colors",
+                                  isSelected
+                                    ? "bg-primary text-primary-foreground"
+                                    : "hover:bg-secondary"
+                                )}
+                              >
+                                <div className="font-medium text-sm">{playlist.name}</div>
+                                <div className="text-xs opacity-70">by {playlist.user_name}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      
+                      {playlistSearch.length >= 2 && !isSearching && searchResults.length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-2">
+                          No playlists found. Try a different search term.
+                        </p>
+                      )}
+                    </TabsContent>
+                    
+                    <TabsContent value="genres" className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        Or select genres to generate music (fallback if no playlists selected)
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {AVAILABLE_GENRES.map((genre) => (
+                          <Badge
+                            key={genre}
+                            variant={selectedGenres.includes(genre) ? "default" : "outline"}
+                            className={cn(
+                              "cursor-pointer transition-all capitalize",
+                              selectedGenres.includes(genre) && "bg-primary"
+                            )}
+                            onClick={() => toggleGenre(genre)}
+                          >
+                            {genre}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TabsContent>
+                  </Tabs>
 
                   {/* Register Button */}
                   <Button
                     onClick={handleRegister}
-                    disabled={isRegistering || !name.trim() || selectedGenres.length === 0}
+                    disabled={isRegistering || !name.trim() || (selectedPlaylists.length === 0 && selectedGenres.length === 0)}
                     className="w-full"
                   >
                     {isRegistering ? (
@@ -271,7 +413,9 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
                       <div>
                         <p className="font-medium text-sm">{face.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {face.preferredGenres.slice(0, 3).join(", ")}
+                          {face.selectedPlaylists.length > 0
+                            ? `${face.selectedPlaylists.length} playlist(s)`
+                            : face.preferredGenres.slice(0, 3).join(", ")}
                         </p>
                       </div>
                     </div>
