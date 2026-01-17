@@ -51,15 +51,25 @@ export async function fetchTracksByGenre(
   url.searchParams.set("include", "musicinfo");
   url.searchParams.set("boost", "popularity_month");
 
+  console.log(`Fetching tracks for genre: ${genre}, URL: ${url.toString()}`);
+
   try {
     const response = await fetch(url.toString());
+    
+    if (!response.ok) {
+      console.error(`Jamendo API HTTP error: ${response.status} ${response.statusText}`);
+      return [];
+    }
+    
     const data: JamendoResponse = await response.json();
+    console.log(`Jamendo response for ${genre}:`, data.headers);
     
     if (data.headers.status !== "success") {
       console.error("Jamendo API error:", data.headers);
       return [];
     }
 
+    console.log(`Found ${data.results.length} tracks for genre ${genre}`);
     return data.results.map(mapJamendoToTrack);
   } catch (error) {
     console.error("Failed to fetch from Jamendo:", error);
@@ -127,12 +137,27 @@ export async function createUserPlaylist(
   genres: MusicGenre[],
   tracksPerGenre: number = 3
 ): Promise<Track[]> {
+  console.log(`Creating playlist for genres: ${genres.join(', ')}`);
+  
+  if (!genres || genres.length === 0) {
+    console.warn("No genres provided, fetching popular tracks instead");
+    return fetchPopularTracks(tracksPerGenre * 3);
+  }
+  
   const trackPromises = genres.map(genre => 
-    fetchTracksByGenre(genre, tracksPerGenre)
+    fetchTracksByGenre(genre as MusicGenre, tracksPerGenre)
   );
   
   const results = await Promise.all(trackPromises);
   const allTracks = results.flat();
+  
+  console.log(`Total tracks fetched: ${allTracks.length}`);
+  
+  // If no tracks found for genres, try fetching popular tracks
+  if (allTracks.length === 0) {
+    console.warn("No tracks found for genres, fetching popular tracks");
+    return fetchPopularTracks(tracksPerGenre * 3);
+  }
   
   // Shuffle the tracks
   return shuffleArray(allTracks);
