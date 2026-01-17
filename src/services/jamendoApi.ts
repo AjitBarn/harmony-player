@@ -2,7 +2,7 @@ import { Track } from "@/types/music";
 
 // Jamendo API - Free music with full streaming
 // Get your free API key at: https://developer.jamendo.com/
-const JAMENDO_CLIENT_ID = "b1e46ec0"; // Demo key - replace with your own for production
+const JAMENDO_CLIENT_ID = "11619873";
 
 interface JamendoTrack {
   id: string;
