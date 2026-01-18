@@ -20,7 +20,7 @@ import {
   deleteFace,
   areModelsLoaded 
 } from "@/services/faceRecognition";
-import { localPlaylists, LocalPlaylist } from "@/data/bollywoodSongs";
+import { localPlaylists, LocalPlaylist } from "@/services/localMusicService";
 import { cn } from "@/lib/utils";
 
 // Available genres for fallback

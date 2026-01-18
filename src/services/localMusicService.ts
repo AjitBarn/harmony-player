@@ -4,12 +4,16 @@ import {
   searchLocalPlaylists, 
   getPlaylistById, 
   getMergedPlaylistTracks,
+  getAllTracks,
   LocalPlaylist 
 } from "@/data/bollywoodSongs";
 
+// Re-export for external use
+export { localPlaylists };
+export type { LocalPlaylist };
+
 // Search playlists
 export const searchPlaylists = async (query: string): Promise<LocalPlaylist[]> => {
-  // Simulate async behavior
   return Promise.resolve(searchLocalPlaylists(query));
 };
 
@@ -21,12 +25,22 @@ export const fetchPlaylistTracks = async (playlistId: string): Promise<Track[]> 
 
 // Create merged playlist from selected playlist IDs
 export const createPlaylistFromIds = async (playlistIds: string[]): Promise<Track[]> => {
-  return Promise.resolve(getMergedPlaylistTracks(playlistIds));
+  const tracks = getMergedPlaylistTracks(playlistIds);
+  // Always return at least some tracks
+  if (tracks.length === 0) {
+    return Promise.resolve(getAllTracks().slice(0, 10));
+  }
+  return Promise.resolve(tracks);
 };
 
 // Get all available playlists
 export const getAllPlaylists = (): LocalPlaylist[] => {
   return localPlaylists;
+};
+
+// Get all tracks without categorization
+export const getAllSongs = (): Track[] => {
+  return getAllTracks();
 };
 
 // Legacy genre-based playlist creation (fallback)
@@ -52,8 +66,8 @@ export const createUserPlaylist = async (genres: string[]): Promise<Track[]> => 
     .filter(Boolean);
   
   if (playlistIds.length === 0) {
-    // Return random playlist if no match
-    return Promise.resolve(localPlaylists[0]?.tracks || []);
+    // Return all tracks if no genre match
+    return Promise.resolve(getAllTracks());
   }
   
   return createPlaylistFromIds(playlistIds);
