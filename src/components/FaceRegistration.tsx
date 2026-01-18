@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Camera, UserPlus, Trash2, Music, Loader2, Search, ListMusic, X } from "lucide-react";
+import { Camera, UserPlus, Trash2, Music, Loader2, ListMusic, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -20,13 +20,12 @@ import {
   deleteFace,
   areModelsLoaded 
 } from "@/services/faceRecognition";
-import { 
-  MusicGenre, 
-  AVAILABLE_GENRES, 
-  searchPlaylists, 
-  JamendoPlaylist 
-} from "@/services/jamendoApi";
+import { localPlaylists, LocalPlaylist } from "@/data/bollywoodSongs";
 import { cn } from "@/lib/utils";
+
+// Available genres for fallback
+const AVAILABLE_GENRES = ["romantic", "party", "sad", "retro", "punjabi", "sufi", "motivational"] as const;
+type MusicGenre = typeof AVAILABLE_GENRES[number];
 
 interface FaceRegistrationProps {
   onFacesUpdated?: () => void;
@@ -43,14 +42,8 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
   const [modelsReady, setModelsReady] = useState(false);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   
-  // Playlist search state
-  const [playlistSearch, setPlaylistSearch] = useState("");
-  const [searchResults, setSearchResults] = useState<JamendoPlaylist[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const searchTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Load registered faces on mount
   useEffect(() => {
@@ -75,31 +68,6 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
       setModelsReady(true);
     }
   }, [isOpen]);
-
-  // Debounced playlist search
-  useEffect(() => {
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    if (playlistSearch.trim().length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    searchTimeoutRef.current = setTimeout(async () => {
-      setIsSearching(true);
-      const results = await searchPlaylists(playlistSearch.trim(), 10);
-      setSearchResults(results);
-      setIsSearching(false);
-    }, 500);
-
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, [playlistSearch]);
 
   const startCamera = useCallback(async () => {
     try {
@@ -130,8 +98,6 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
     setName("");
     setSelectedGenres([]);
     setSelectedPlaylists([]);
-    setPlaylistSearch("");
-    setSearchResults([]);
     setIsRegistering(false);
     setIsOpen(false);
   }, [stopCamera]);
@@ -144,7 +110,7 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
     );
   };
 
-  const togglePlaylist = (playlist: JamendoPlaylist) => {
+  const togglePlaylist = (playlist: LocalPlaylist) => {
     setSelectedPlaylists((prev) => {
       const exists = prev.find((p) => p.id === playlist.id);
       if (exists) {
@@ -187,8 +153,6 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
         setName("");
         setSelectedGenres([]);
         setSelectedPlaylists([]);
-        setPlaylistSearch("");
-        setSearchResults([]);
         onFacesUpdated?.();
       }
     } catch (error) {
@@ -298,58 +262,32 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
                         </div>
                       )}
                       
-                      {/* Playlist Search */}
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input
-                          value={playlistSearch}
-                          onChange={(e) => setPlaylistSearch(e.target.value)}
-                          placeholder="Search Jamendo playlists..."
-                          className="pl-9"
-                        />
+                      {/* Available Playlists */}
+                      <div className="max-h-48 overflow-y-auto space-y-1 border rounded-lg p-2">
+                        {localPlaylists.map((playlist) => {
+                          const isSelected = selectedPlaylists.some((p) => p.id === playlist.id);
+                          return (
+                            <button
+                              key={playlist.id}
+                              onClick={() => togglePlaylist(playlist)}
+                              className={cn(
+                                "w-full text-left px-3 py-2 rounded-md transition-colors",
+                                isSelected
+                                  ? "bg-primary text-primary-foreground"
+                                  : "hover:bg-secondary"
+                              )}
+                            >
+                              <div className="font-medium text-sm">{playlist.name}</div>
+                              <div className="text-xs opacity-70">{playlist.tracks.length} songs</div>
+                            </button>
+                          );
+                        })}
                       </div>
-                      
-                      {/* Search Results */}
-                      {isSearching && (
-                        <div className="flex items-center justify-center py-4 text-muted-foreground">
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                          Searching...
-                        </div>
-                      )}
-                      
-                      {searchResults.length > 0 && (
-                        <div className="max-h-40 overflow-y-auto space-y-1 border rounded-lg p-2">
-                          {searchResults.map((playlist) => {
-                            const isSelected = selectedPlaylists.some((p) => p.id === playlist.id);
-                            return (
-                              <button
-                                key={playlist.id}
-                                onClick={() => togglePlaylist(playlist)}
-                                className={cn(
-                                  "w-full text-left px-3 py-2 rounded-md transition-colors",
-                                  isSelected
-                                    ? "bg-primary text-primary-foreground"
-                                    : "hover:bg-secondary"
-                                )}
-                              >
-                                <div className="font-medium text-sm">{playlist.name}</div>
-                                <div className="text-xs opacity-70">by {playlist.user_name}</div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                      
-                      {playlistSearch.length >= 2 && !isSearching && searchResults.length === 0 && (
-                        <p className="text-sm text-muted-foreground text-center py-2">
-                          No playlists found. Try a different search term.
-                        </p>
-                      )}
                     </TabsContent>
                     
                     <TabsContent value="genres" className="space-y-3">
                       <p className="text-sm text-muted-foreground">
-                        Or select genres to generate music (fallback if no playlists selected)
+                        Select genres to generate music (fallback if no playlists selected)
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {AVAILABLE_GENRES.map((genre) => (
