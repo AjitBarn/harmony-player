@@ -82,6 +82,11 @@ const bollywoodTracks: Track[] = [
 // Local playlists
 export const localPlaylists: LocalPlaylist[] = [
   {
+    id: "pl-all",
+    name: "All Songs",
+    tracks: bollywoodTracks
+  },
+  {
     id: "pl-romantic",
     name: "Romantic Hits",
     tracks: bollywoodTracks.filter(t => ["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"].includes(t.id))
