@@ -5,11 +5,12 @@ import { cn } from "@/lib/utils";
 import { 
   loadModels, 
   detectFaces, 
-  getRegisteredFaces, 
   matchFaces, 
   areModelsLoaded,
+  getLocalDescriptors,
   RegisteredFace 
 } from "@/services/faceRecognition";
+import { fetchCloudProfiles, cloudProfileToRegisteredFace } from "@/services/profileSync";
 import { createPlaylistFromIds, createUserPlaylist } from "@/services/localMusicService";
 import { FaceRegistration } from "./FaceRegistration";
 
@@ -97,11 +98,23 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
         return;
       }
 
-      // Get registered faces and match
-      const registeredFaces = getRegisteredFaces();
+      // Get cloud profiles and local descriptors, then combine
+      const [cloudProfiles, localDescriptors] = await Promise.all([
+        fetchCloudProfiles(),
+        Promise.resolve(getLocalDescriptors())
+      ]);
+      
+      // Build RegisteredFace array from cloud profiles + local descriptors
+      const registeredFaces: RegisteredFace[] = [];
+      for (const profile of cloudProfiles) {
+        const descriptor = localDescriptors[profile.id];
+        if (descriptor) {
+          registeredFaces.push(cloudProfileToRegisteredFace(profile, descriptor));
+        }
+      }
       
       if (registeredFaces.length === 0) {
-        setNoFacesMessage("No registered users. Click 'Register Face' to add yourself.");
+        setNoFacesMessage("No users with face data on this device. Register your face first.");
         clearInterval(interval);
         setIsScanning(false);
         return;
@@ -164,7 +177,14 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
     };
   }, [stopCamera]);
 
-  const registeredCount = getRegisteredFaces().length;
+  const [profileCount, setProfileCount] = useState(0);
+
+  // Load profile count on mount
+  useEffect(() => {
+    fetchCloudProfiles()
+      .then((profiles) => setProfileCount(profiles.length))
+      .catch(() => setProfileCount(0));
+  }, []);
 
   return (
     <div className="glass rounded-2xl p-6 space-y-4">
@@ -182,7 +202,7 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
               {cameraActive 
                 ? isLoadingModels 
                   ? "Loading AI models..." 
-                  : `Camera active • ${registeredCount} user(s) registered`
+                  : `Camera active • ${profileCount} user(s) in cloud`
                 : "Start camera to detect users"}
             </p>
           </div>
