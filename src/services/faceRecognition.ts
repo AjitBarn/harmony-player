@@ -7,12 +7,12 @@ export interface RegisteredFace {
   avatar: string;
   descriptor: Float32Array;
   preferredGenres: string[];
-  selectedPlaylists: { id: string; name: string }[]; // New: selected Jamendo playlists
+  selectedPlaylists: { id: string; name: string }[];
   registeredAt: Date;
 }
 
-// Storage key for registered faces
-const STORAGE_KEY = 'facesync_registered_faces';
+// Storage key for local face descriptors (synced profiles use cloud IDs)
+const DESCRIPTORS_STORAGE_KEY = 'facesync_face_descriptors';
 
 // Model loading state
 let modelsLoaded = false;
@@ -63,15 +63,62 @@ export async function detectFaces(
 }
 
 /**
- * Get registered faces from localStorage
+ * Get local face descriptors (keyed by profile ID)
+ */
+export function getLocalDescriptors(): Record<string, Float32Array> {
+  try {
+    const stored = localStorage.getItem(DESCRIPTORS_STORAGE_KEY);
+    if (!stored) return {};
+
+    const parsed = JSON.parse(stored);
+    const result: Record<string, Float32Array> = {};
+    for (const [id, arr] of Object.entries(parsed)) {
+      result[id] = new Float32Array(arr as number[]);
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Save a face descriptor locally (keyed by cloud profile ID)
+ */
+export function saveLocalDescriptor(id: string, descriptor: Float32Array): void {
+  const descriptors = getLocalDescriptors();
+  descriptors[id] = descriptor;
+  
+  const toSave: Record<string, number[]> = {};
+  for (const [key, arr] of Object.entries(descriptors)) {
+    toSave[key] = Array.from(arr);
+  }
+  localStorage.setItem(DESCRIPTORS_STORAGE_KEY, JSON.stringify(toSave));
+}
+
+/**
+ * Delete a local face descriptor
+ */
+export function deleteLocalDescriptor(id: string): void {
+  const descriptors = getLocalDescriptors();
+  delete descriptors[id];
+  
+  const toSave: Record<string, number[]> = {};
+  for (const [key, arr] of Object.entries(descriptors)) {
+    toSave[key] = Array.from(arr);
+  }
+  localStorage.setItem(DESCRIPTORS_STORAGE_KEY, JSON.stringify(toSave));
+}
+
+/**
+ * Legacy: Get registered faces from old localStorage format (for migration)
+ * @deprecated Use cloud profiles + local descriptors instead
  */
 export function getRegisteredFaces(): RegisteredFace[] {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem('facesync_registered_faces');
     if (!stored) return [];
 
     const parsed = JSON.parse(stored);
-    // Convert descriptor arrays back to Float32Array
     return parsed.map((face: any) => ({
       ...face,
       descriptor: new Float32Array(face.descriptor),
@@ -84,26 +131,11 @@ export function getRegisteredFaces(): RegisteredFace[] {
 }
 
 /**
- * Save registered faces to localStorage
+ * Capture face detection data from video (returns descriptor and avatar)
  */
-function saveRegisteredFaces(faces: RegisteredFace[]): void {
-  const toSave = faces.map((face) => ({
-    ...face,
-    descriptor: Array.from(face.descriptor),
-    registeredAt: face.registeredAt.toISOString(),
-  }));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-}
-
-/**
- * Register a new face
- */
-export async function registerFace(
-  video: HTMLVideoElement,
-  name: string,
-  preferredGenres: string[],
-  selectedPlaylists: { id: string; name: string }[] = []
-): Promise<RegisteredFace | null> {
+export async function captureFaceData(
+  video: HTMLVideoElement
+): Promise<{ descriptor: Float32Array; avatar: string }> {
   const detections = await detectFaces(video);
 
   if (detections.length === 0) {
@@ -123,7 +155,6 @@ export async function registerFace(
   const ctx = canvas.getContext('2d');
   
   if (ctx) {
-    // Get face bounding box
     const box = detection.detection.box;
     const padding = 40;
     const sx = Math.max(0, box.x - padding);
@@ -136,30 +167,57 @@ export async function registerFace(
 
   const avatar = canvas.toDataURL('image/jpeg', 0.8);
 
+  return { descriptor: detection.descriptor, avatar };
+}
+
+/**
+ * Legacy: Register a new face (stores locally only)
+ * @deprecated Use captureFaceData + cloud sync instead
+ */
+export async function registerFace(
+  video: HTMLVideoElement,
+  name: string,
+  preferredGenres: string[],
+  selectedPlaylists: { id: string; name: string }[] = []
+): Promise<RegisteredFace | null> {
+  const { descriptor, avatar } = await captureFaceData(video);
+
   const newFace: RegisteredFace = {
     id: `user_${Date.now()}`,
     name,
     avatar,
-    descriptor: detection.descriptor,
+    descriptor,
     preferredGenres,
     selectedPlaylists,
     registeredAt: new Date(),
   };
 
+  // Save to old localStorage format for backwards compatibility
   const existingFaces = getRegisteredFaces();
   existingFaces.push(newFace);
-  saveRegisteredFaces(existingFaces);
+  const toSave = existingFaces.map((face) => ({
+    ...face,
+    descriptor: Array.from(face.descriptor),
+    registeredAt: face.registeredAt.toISOString(),
+  }));
+  localStorage.setItem('facesync_registered_faces', JSON.stringify(toSave));
 
   return newFace;
 }
 
 /**
- * Delete a registered face
+ * Legacy: Delete a registered face from localStorage
+ * @deprecated Use deleteLocalDescriptor + cloud sync instead
  */
 export function deleteFace(id: string): void {
   const faces = getRegisteredFaces();
   const filtered = faces.filter((f) => f.id !== id);
-  saveRegisteredFaces(filtered);
+  const toSave = filtered.map((face) => ({
+    ...face,
+    descriptor: Array.from(face.descriptor),
+    registeredAt: face.registeredAt.toISOString(),
+  }));
+  localStorage.setItem('facesync_registered_faces', JSON.stringify(toSave));
 }
 
 /**

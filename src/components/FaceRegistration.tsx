@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Camera, UserPlus, Trash2, Music, Loader2, ListMusic, X } from "lucide-react";
+import { Camera, UserPlus, Trash2, Music, Loader2, ListMusic, X, Cloud, CloudOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -13,13 +13,19 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { 
-  RegisteredFace, 
   loadModels, 
-  registerFace, 
-  getRegisteredFaces, 
-  deleteFace,
+  captureFaceData,
+  saveLocalDescriptor,
+  deleteLocalDescriptor,
+  getLocalDescriptors,
   areModelsLoaded 
 } from "@/services/faceRecognition";
+import { 
+  fetchCloudProfiles, 
+  saveProfileToCloud, 
+  deleteProfileFromCloud,
+  CloudProfile 
+} from "@/services/profileSync";
 import { localPlaylists, LocalPlaylist } from "@/services/localMusicService";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +39,8 @@ interface FaceRegistrationProps {
 
 export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [registeredFaces, setRegisteredFaces] = useState<RegisteredFace[]>([]);
+  const [cloudProfiles, setCloudProfiles] = useState<CloudProfile[]>([]);
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [name, setName] = useState("");
   const [selectedGenres, setSelectedGenres] = useState<MusicGenre[]>([]);
@@ -41,14 +48,32 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
   const [cameraActive, setCameraActive] = useState(false);
   const [modelsReady, setModelsReady] = useState(false);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [localDescriptorIds, setLocalDescriptorIds] = useState<Set<string>>(new Set());
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Load registered faces on mount
-  useEffect(() => {
-    setRegisteredFaces(getRegisteredFaces());
+  // Load cloud profiles and local descriptors on mount/open
+  const loadProfiles = useCallback(async () => {
+    setIsLoadingProfiles(true);
+    try {
+      const profiles = await fetchCloudProfiles();
+      setCloudProfiles(profiles);
+      const localDescs = getLocalDescriptors();
+      setLocalDescriptorIds(new Set(Object.keys(localDescs)));
+    } catch (err) {
+      console.error("Failed to load profiles:", err);
+      toast.error("Failed to load profiles from cloud");
+    } finally {
+      setIsLoadingProfiles(false);
+    }
   }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadProfiles();
+    }
+  }, [isOpen, loadProfiles]);
 
   // Load models when dialog opens
   useEffect(() => {
@@ -140,21 +165,29 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
 
     setIsRegistering(true);
     try {
-      const newFace = await registerFace(
-        videoRef.current,
+      // Capture face data (descriptor + avatar)
+      const { descriptor, avatar } = await captureFaceData(videoRef.current);
+      
+      // Save profile to cloud (without face descriptor for privacy)
+      const cloudProfile = await saveProfileToCloud(
         name.trim(),
+        avatar,
         selectedGenres,
         selectedPlaylists
       );
       
-      if (newFace) {
-        setRegisteredFaces(getRegisteredFaces());
-        toast.success(`${name} registered successfully!`);
-        setName("");
-        setSelectedGenres([]);
-        setSelectedPlaylists([]);
-        onFacesUpdated?.();
-      }
+      // Save face descriptor locally (tied to cloud profile ID)
+      saveLocalDescriptor(cloudProfile.id, descriptor);
+      
+      // Update state
+      setCloudProfiles((prev) => [cloudProfile, ...prev]);
+      setLocalDescriptorIds((prev) => new Set([...prev, cloudProfile.id]));
+      
+      toast.success(`${name} registered successfully! Profile synced to cloud.`);
+      setName("");
+      setSelectedGenres([]);
+      setSelectedPlaylists([]);
+      onFacesUpdated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Registration failed");
     } finally {
@@ -162,11 +195,21 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
     }
   };
 
-  const handleDelete = (id: string, faceName: string) => {
-    deleteFace(id);
-    setRegisteredFaces(getRegisteredFaces());
-    toast.success(`${faceName} removed`);
-    onFacesUpdated?.();
+  const handleDelete = async (id: string, profileName: string) => {
+    try {
+      await deleteProfileFromCloud(id);
+      deleteLocalDescriptor(id);
+      setCloudProfiles((prev) => prev.filter((p) => p.id !== id));
+      setLocalDescriptorIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+      toast.success(`${profileName} removed`);
+      onFacesUpdated?.();
+    } catch (error) {
+      toast.error("Failed to delete profile");
+    }
   };
 
   return (
@@ -330,46 +373,72 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
             </>
           )}
 
-          {/* Registered Faces List */}
-          {registeredFaces.length > 0 && (
+          {/* Cloud Profiles List */}
+          {isLoadingProfiles ? (
+            <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Loading profiles...</span>
+            </div>
+          ) : cloudProfiles.length > 0 ? (
             <div className="border-t pt-4">
-              <h4 className="text-sm font-medium mb-3">
-                Registered Users ({registeredFaces.length})
+              <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+                <Cloud className="w-4 h-4 text-primary" />
+                Registered Users ({cloudProfiles.length})
               </h4>
               <div className="space-y-2 max-h-40 overflow-y-auto">
-                {registeredFaces.map((face) => (
-                  <div
-                    key={face.id}
-                    className="flex items-center justify-between p-2 bg-secondary rounded-lg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={face.avatar}
-                        alt={face.name}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                      <div>
-                        <p className="font-medium text-sm">{face.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {face.selectedPlaylists.length > 0
-                            ? `${face.selectedPlaylists.length} playlist(s)`
-                            : face.preferredGenres.slice(0, 3).join(", ")}
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(face.id, face.name)}
-                      className="text-destructive hover:text-destructive"
+                {cloudProfiles.map((profile) => {
+                  const hasLocalDescriptor = localDescriptorIds.has(profile.id);
+                  return (
+                    <div
+                      key={profile.id}
+                      className="flex items-center justify-between p-2 bg-secondary rounded-lg"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-3">
+                        {profile.avatar ? (
+                          <img
+                            src={profile.avatar}
+                            alt={profile.name}
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                            <UserPlus className="w-5 h-5 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium text-sm flex items-center gap-1">
+                            {profile.name}
+                            {hasLocalDescriptor ? (
+                              <span title="Face registered on this device">
+                                <Cloud className="w-3 h-3 text-primary" />
+                              </span>
+                            ) : (
+                              <span title="Face not registered on this device">
+                                <CloudOff className="w-3 h-3 text-muted-foreground" />
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {profile.selected_playlists.length > 0
+                              ? `${profile.selected_playlists.length} playlist(s)`
+                              : profile.preferred_genres.slice(0, 3).join(", ")}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(profile.id, profile.name)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>
