@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Camera, UserPlus, Trash2, Music, Loader2, ListMusic, X, Cloud, CloudOff } from "lucide-react";
+import { Camera, UserPlus, Trash2, Music, Loader2, Music2, Cloud, CloudOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -26,7 +26,9 @@ import {
   deleteProfileFromCloud,
   CloudProfile 
 } from "@/services/profileSync";
-import { localPlaylists, LocalPlaylist } from "@/services/localMusicService";
+import { getAllSongs } from "@/services/localMusicService";
+import { SongSelector } from "@/components/SongSelector";
+import { Track } from "@/types/music";
 import { cn } from "@/lib/utils";
 
 // Available genres for fallback
@@ -44,7 +46,8 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
   const [isRegistering, setIsRegistering] = useState(false);
   const [name, setName] = useState("");
   const [selectedGenres, setSelectedGenres] = useState<MusicGenre[]>([]);
-  const [selectedPlaylists, setSelectedPlaylists] = useState<{ id: string; name: string }[]>([]);
+  const [selectedSongs, setSelectedSongs] = useState<Track[]>([]);
+  const allSongs = getAllSongs();
   const [cameraActive, setCameraActive] = useState(false);
   const [modelsReady, setModelsReady] = useState(false);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
@@ -122,7 +125,7 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
     stopCamera();
     setName("");
     setSelectedGenres([]);
-    setSelectedPlaylists([]);
+    setSelectedSongs([]);
     setIsRegistering(false);
     setIsOpen(false);
   }, [stopCamera]);
@@ -135,27 +138,13 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
     );
   };
 
-  const togglePlaylist = (playlist: LocalPlaylist) => {
-    setSelectedPlaylists((prev) => {
-      const exists = prev.find((p) => p.id === playlist.id);
-      if (exists) {
-        return prev.filter((p) => p.id !== playlist.id);
-      }
-      return [...prev, { id: playlist.id, name: playlist.name }];
-    });
-  };
-
-  const removePlaylist = (playlistId: string) => {
-    setSelectedPlaylists((prev) => prev.filter((p) => p.id !== playlistId));
-  };
-
   const handleRegister = async () => {
     if (!name.trim()) {
       toast.error("Please enter your name");
       return;
     }
-    if (selectedPlaylists.length === 0 && selectedGenres.length === 0) {
-      toast.error("Please select at least one playlist or genre");
+    if (selectedSongs.length === 0 && selectedGenres.length === 0) {
+      toast.error("Please select at least one song or genre");
       return;
     }
     if (!videoRef.current) {
@@ -168,12 +157,18 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
       // Capture face data (descriptor + avatar)
       const { descriptor, avatar } = await captureFaceData(videoRef.current);
       
+      // Convert selected songs to playlist format for storage
+      const songsAsPlaylist = selectedSongs.map(song => ({
+        id: song.id,
+        name: song.title
+      }));
+      
       // Save profile to cloud (without face descriptor for privacy)
       const cloudProfile = await saveProfileToCloud(
         name.trim(),
         avatar,
         selectedGenres,
-        selectedPlaylists
+        songsAsPlaylist
       );
       
       // Save face descriptor locally (tied to cloud profile ID)
@@ -186,7 +181,7 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
       toast.success(`${name} registered successfully! Profile synced to cloud.`);
       setName("");
       setSelectedGenres([]);
-      setSelectedPlaylists([]);
+      setSelectedSongs([]);
       onFacesUpdated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Registration failed");
@@ -271,11 +266,11 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
                   </div>
 
                   {/* Music Selection Tabs */}
-                  <Tabs defaultValue="playlists" className="w-full">
+                  <Tabs defaultValue="songs" className="w-full">
                     <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="playlists" className="gap-2">
-                        <ListMusic className="w-4 h-4" />
-                        Playlists
+                      <TabsTrigger value="songs" className="gap-2">
+                        <Music2 className="w-4 h-4" />
+                        Songs
                       </TabsTrigger>
                       <TabsTrigger value="genres" className="gap-2">
                         <Music className="w-4 h-4" />
@@ -283,54 +278,18 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
                       </TabsTrigger>
                     </TabsList>
                     
-                    <TabsContent value="playlists" className="space-y-3">
-                      {/* Selected Playlists */}
-                      {selectedPlaylists.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {selectedPlaylists.map((playlist) => (
-                            <Badge
-                              key={playlist.id}
-                              variant="default"
-                              className="gap-1 pr-1"
-                            >
-                              {playlist.name}
-                              <button
-                                onClick={() => removePlaylist(playlist.id)}
-                                className="ml-1 hover:bg-primary-foreground/20 rounded p-0.5"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                      
-                      {/* Available Playlists */}
-                      <div className="max-h-48 overflow-y-auto space-y-1 border rounded-lg p-2">
-                        {localPlaylists.map((playlist) => {
-                          const isSelected = selectedPlaylists.some((p) => p.id === playlist.id);
-                          return (
-                            <button
-                              key={playlist.id}
-                              onClick={() => togglePlaylist(playlist)}
-                              className={cn(
-                                "w-full text-left px-3 py-2 rounded-md transition-colors",
-                                isSelected
-                                  ? "bg-primary text-primary-foreground"
-                                  : "hover:bg-secondary"
-                              )}
-                            >
-                              <div className="font-medium text-sm">{playlist.name}</div>
-                              <div className="text-xs opacity-70">{playlist.tracks.length} songs</div>
-                            </button>
-                          );
-                        })}
-                      </div>
+                    <TabsContent value="songs" className="space-y-3">
+                      <SongSelector
+                        songs={allSongs}
+                        selectedSongs={selectedSongs}
+                        onSelectionChange={setSelectedSongs}
+                        maxHeight="200px"
+                      />
                     </TabsContent>
                     
                     <TabsContent value="genres" className="space-y-3">
                       <p className="text-sm text-muted-foreground">
-                        Select genres to generate music (fallback if no playlists selected)
+                        Select genres to generate music (fallback if no songs selected)
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {AVAILABLE_GENRES.map((genre) => (
@@ -353,7 +312,7 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
                   {/* Register Button */}
                   <Button
                     onClick={handleRegister}
-                    disabled={isRegistering || !name.trim() || (selectedPlaylists.length === 0 && selectedGenres.length === 0)}
+                    disabled={isRegistering || !name.trim() || (selectedSongs.length === 0 && selectedGenres.length === 0)}
                     className="w-full"
                   >
                     {isRegistering ? (
