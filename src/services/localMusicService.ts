@@ -23,14 +23,17 @@ export const fetchPlaylistTracks = async (playlistId: string): Promise<Track[]> 
   return Promise.resolve(playlist?.tracks || []);
 };
 
-// Create merged playlist from selected playlist IDs
-export const createPlaylistFromIds = async (playlistIds: string[]): Promise<Track[]> => {
-  const tracks = getMergedPlaylistTracks(playlistIds);
-  // Always return at least some tracks
-  if (tracks.length === 0) {
-    return Promise.resolve(getAllTracks().slice(0, 10));
-  }
-  return Promise.resolve(tracks);
+// Create playlist from selected track IDs
+export const createPlaylistFromIds = async (trackIds: string[]): Promise<Track[]> => {
+  const allTracks = getAllTracks();
+  
+  // Filter tracks that match the given IDs
+  const selectedTracks = trackIds
+    .map(id => allTracks.find(track => track.id === id))
+    .filter((track): track is Track => track !== undefined);
+  
+  // Return empty array if no tracks found (no fallback to prevent showing unselected songs)
+  return Promise.resolve(selectedTracks);
 };
 
 // Get all available playlists
