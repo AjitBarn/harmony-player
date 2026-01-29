@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Camera, UserPlus, Trash2, Music, Loader2, Music2, Cloud, CloudOff } from "lucide-react";
+import { Camera, UserPlus, Trash2, Music, Loader2, Music2, Cloud, CloudOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -44,6 +44,7 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
   const [cloudProfiles, setCloudProfiles] = useState<CloudProfile[]>([]);
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isLinkingFace, setIsLinkingFace] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [selectedGenres, setSelectedGenres] = useState<MusicGenre[]>([]);
   const [selectedSongs, setSelectedSongs] = useState<Track[]>([]);
@@ -127,6 +128,7 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
     setSelectedGenres([]);
     setSelectedSongs([]);
     setIsRegistering(false);
+    setIsLinkingFace(null);
     setIsOpen(false);
   }, [stopCamera]);
 
@@ -190,6 +192,33 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
     }
   };
 
+  // Re-register face for an existing cloud profile on this device
+  const handleLinkFaceToProfile = async (profile: CloudProfile) => {
+    if (!videoRef.current) {
+      toast.error("Please start the camera first");
+      return;
+    }
+
+    setIsLinkingFace(profile.id);
+    try {
+      // Capture face descriptor from video
+      const { descriptor } = await captureFaceData(videoRef.current);
+      
+      // Save descriptor locally linked to cloud profile ID
+      saveLocalDescriptor(profile.id, descriptor);
+      
+      // Update local state
+      setLocalDescriptorIds((prev) => new Set([...prev, profile.id]));
+      
+      toast.success(`Face linked to ${profile.name} on this device!`);
+      onFacesUpdated?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to link face");
+    } finally {
+      setIsLinkingFace(null);
+    }
+  };
+
   const handleDelete = async (id: string, profileName: string) => {
     try {
       await deleteProfileFromCloud(id);
@@ -206,6 +235,9 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
       toast.error("Failed to delete profile");
     }
   };
+
+  // Count profiles needing face registration on this device
+  const profilesNeedingFace = cloudProfiles.filter(p => !localDescriptorIds.has(p.id));
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -252,6 +284,16 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
                   </div>
                 )}
               </div>
+
+              {/* Notice for profiles needing face on this device */}
+              {cameraActive && profilesNeedingFace.length > 0 && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                  <p className="text-sm text-amber-600 dark:text-amber-400 mb-2">
+                    <strong>{profilesNeedingFace.length} profile(s)</strong> need face registration on this device. 
+                    Click the <RefreshCw className="w-3 h-3 inline" /> button below to link your face.
+                  </p>
+                </div>
+              )}
 
               {cameraActive && (
                 <>
@@ -323,7 +365,7 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
                     ) : (
                       <>
                         <Camera className="w-4 h-4 mr-2" />
-                        Register Face
+                        Register New User
                       </>
                     )}
                   </Button>
@@ -344,13 +386,17 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
                 <Cloud className="w-4 h-4 text-primary" />
                 Registered Users ({cloudProfiles.length})
               </h4>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
+              <div className="space-y-2 max-h-48 overflow-y-auto">
                 {cloudProfiles.map((profile) => {
                   const hasLocalDescriptor = localDescriptorIds.has(profile.id);
+                  const isLinking = isLinkingFace === profile.id;
                   return (
                     <div
                       key={profile.id}
-                      className="flex items-center justify-between p-2 bg-secondary rounded-lg"
+                      className={cn(
+                        "flex items-center justify-between p-2 rounded-lg",
+                        hasLocalDescriptor ? "bg-secondary" : "bg-amber-500/10 border border-amber-500/20"
+                      )}
                     >
                       <div className="flex items-center gap-3">
                         {profile.avatar ? (
@@ -372,26 +418,45 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
                                 <Cloud className="w-3 h-3 text-primary" />
                               </span>
                             ) : (
-                              <span title="Face not registered on this device">
-                                <CloudOff className="w-3 h-3 text-muted-foreground" />
+                              <span title="Face NOT registered on this device - click refresh to link">
+                                <CloudOff className="w-3 h-3 text-amber-500" />
                               </span>
                             )}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {profile.selected_playlists.length > 0
-                              ? `${profile.selected_playlists.length} playlist(s)`
-                              : profile.preferred_genres.slice(0, 3).join(", ")}
+                              ? `${profile.selected_playlists.length} song(s)`
+                              : profile.preferred_genres.slice(0, 3).join(", ") || "No preferences"}
                           </p>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(profile.id, profile.name)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {/* Link Face Button - only show if no local descriptor and camera is active */}
+                        {!hasLocalDescriptor && cameraActive && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleLinkFaceToProfile(profile)}
+                            disabled={isLinking}
+                            className="text-amber-600 hover:text-amber-700 hover:bg-amber-500/20"
+                            title="Link your face to this profile on this device"
+                          >
+                            {isLinking ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-4 h-4" />
+                            )}
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(profile.id, profile.name)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
