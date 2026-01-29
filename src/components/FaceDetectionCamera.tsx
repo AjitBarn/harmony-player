@@ -98,23 +98,25 @@ export function FaceDetectionCamera({ onUsersDetected, detectedUsers }: FaceDete
         return;
       }
 
-      // Get cloud profiles and local descriptors, then combine
+      // Get cloud profiles (which now include face descriptors) and local descriptors as fallback
       const [cloudProfiles, localDescriptors] = await Promise.all([
         fetchCloudProfiles(),
         Promise.resolve(getLocalDescriptors())
       ]);
       
-      // Build RegisteredFace array from cloud profiles + local descriptors
+      // Build RegisteredFace array from cloud profiles
+      // Cloud descriptors are now preferred, local descriptors are fallback
       const registeredFaces: RegisteredFace[] = [];
       for (const profile of cloudProfiles) {
-        const descriptor = localDescriptors[profile.id];
-        if (descriptor) {
-          registeredFaces.push(cloudProfileToRegisteredFace(profile, descriptor));
+        const localDescriptor = localDescriptors[profile.id];
+        const face = cloudProfileToRegisteredFace(profile, localDescriptor);
+        if (face) {
+          registeredFaces.push(face);
         }
       }
       
       if (registeredFaces.length === 0) {
-        setNoFacesMessage("No users with face data on this device. Register your face first.");
+        setNoFacesMessage("No registered users found. Register your face first.");
         clearInterval(interval);
         setIsScanning(false);
         return;

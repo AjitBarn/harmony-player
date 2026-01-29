@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           avatar: string | null
           created_at: string
+          face_descriptor: number[] | null
           id: string
           name: string
           preferred_genres: string[] | null
@@ -27,6 +28,7 @@ export type Database = {
         Insert: {
           avatar?: string | null
           created_at?: string
+          face_descriptor?: number[] | null
           id?: string
           name: string
           preferred_genres?: string[] | null
@@ -36,6 +38,7 @@ export type Database = {
         Update: {
           avatar?: string | null
           created_at?: string
+          face_descriptor?: number[] | null
           id?: string
           name?: string
           preferred_genres?: string[] | null
