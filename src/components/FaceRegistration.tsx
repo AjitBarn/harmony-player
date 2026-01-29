@@ -24,6 +24,7 @@ import {
   fetchCloudProfiles, 
   saveProfileToCloud, 
   deleteProfileFromCloud,
+  updateProfileDescriptor,
   CloudProfile 
 } from "@/services/profileSync";
 import { getAllSongs } from "@/services/localMusicService";
@@ -165,15 +166,16 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
         name: song.title
       }));
       
-      // Save profile to cloud (without face descriptor for privacy)
+      // Save profile to cloud WITH face descriptor for cross-device sync
       const cloudProfile = await saveProfileToCloud(
         name.trim(),
         avatar,
         selectedGenres,
-        songsAsPlaylist
+        songsAsPlaylist,
+        descriptor
       );
       
-      // Save face descriptor locally (tied to cloud profile ID)
+      // Also save face descriptor locally for faster access
       saveLocalDescriptor(cloudProfile.id, descriptor);
       
       // Update state
@@ -204,13 +206,20 @@ export function FaceRegistration({ onFacesUpdated }: FaceRegistrationProps) {
       // Capture face descriptor from video
       const { descriptor } = await captureFaceData(videoRef.current);
       
-      // Save descriptor locally linked to cloud profile ID
+      // Update descriptor in cloud for cross-device sync
+      await updateProfileDescriptor(profile.id, descriptor);
+      
+      // Also save descriptor locally for faster access
       saveLocalDescriptor(profile.id, descriptor);
       
       // Update local state
       setLocalDescriptorIds((prev) => new Set([...prev, profile.id]));
       
-      toast.success(`Face linked to ${profile.name} on this device!`);
+      // Refresh cloud profiles to get updated descriptor
+      const updatedProfiles = await fetchCloudProfiles();
+      setCloudProfiles(updatedProfiles);
+      
+      toast.success(`Face updated for ${profile.name}! Now synced across all devices.`);
       onFacesUpdated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to link face");

@@ -7,6 +7,7 @@ export interface CloudProfile {
   avatar: string | null;
   preferred_genres: string[];
   selected_playlists: { id: string; name: string }[];
+  face_descriptor: number[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -27,18 +28,21 @@ export async function fetchCloudProfiles(): Promise<CloudProfile[]> {
 
   return (data || []).map((row) => ({
     ...row,
+    preferred_genres: row.preferred_genres || [],
     selected_playlists: (row.selected_playlists as { id: string; name: string }[]) || [],
+    face_descriptor: row.face_descriptor || null,
   }));
 }
 
 /**
- * Save a new profile to the cloud database
+ * Save a new profile to the cloud database (with face descriptor)
  */
 export async function saveProfileToCloud(
   name: string,
   avatar: string,
   preferredGenres: string[],
-  selectedPlaylists: { id: string; name: string }[]
+  selectedPlaylists: { id: string; name: string }[],
+  faceDescriptor: Float32Array
 ): Promise<CloudProfile> {
   const { data, error } = await supabase
     .from("face_profiles")
@@ -47,6 +51,7 @@ export async function saveProfileToCloud(
       avatar,
       preferred_genres: preferredGenres,
       selected_playlists: selectedPlaylists,
+      face_descriptor: Array.from(faceDescriptor),
     })
     .select()
     .single();
@@ -58,8 +63,28 @@ export async function saveProfileToCloud(
 
   return {
     ...data,
+    preferred_genres: data.preferred_genres || [],
     selected_playlists: (data.selected_playlists as { id: string; name: string }[]) || [],
+    face_descriptor: data.face_descriptor || null,
   };
+}
+
+/**
+ * Update face descriptor for an existing profile (for cross-device linking)
+ */
+export async function updateProfileDescriptor(
+  id: string,
+  faceDescriptor: Float32Array
+): Promise<void> {
+  const { error } = await supabase
+    .from("face_profiles")
+    .update({ face_descriptor: Array.from(faceDescriptor) })
+    .eq("id", id);
+
+  if (error) {
+    console.error("Error updating profile descriptor:", error);
+    throw error;
+  }
 }
 
 /**
@@ -78,12 +103,26 @@ export async function deleteProfileFromCloud(id: string): Promise<void> {
 }
 
 /**
- * Convert cloud profile to RegisteredFace format (without descriptor - stored locally)
+ * Convert cloud profile to RegisteredFace format
+ * Uses cloud descriptor if available, otherwise falls back to provided local descriptor
  */
 export function cloudProfileToRegisteredFace(
   profile: CloudProfile,
-  descriptor: Float32Array
-): RegisteredFace {
+  localDescriptor?: Float32Array
+): RegisteredFace | null {
+  // Prefer cloud descriptor, fall back to local
+  let descriptor: Float32Array | null = null;
+  
+  if (profile.face_descriptor && profile.face_descriptor.length > 0) {
+    descriptor = new Float32Array(profile.face_descriptor);
+  } else if (localDescriptor) {
+    descriptor = localDescriptor;
+  }
+  
+  if (!descriptor) {
+    return null; // No descriptor available
+  }
+  
   return {
     id: profile.id,
     name: profile.name,
